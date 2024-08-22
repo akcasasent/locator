@@ -12,4 +12,5 @@ Useage options for ```locate_by_extension.ps1``` script.
 
 ## 2. locate_by_date.ps1
 Usage options for  ```locate_by_date.ps1``` script.
+### Specify all options
 ```powershell -ExecutionPolicy Bypass -File locate_by_date.ps1 -Path "C:\" -Extension ".txt" -DaysBack 30 -MinSize 1000 -OutputFolder "C:\User\YOURNAME\Desktop\locator_logs"```
