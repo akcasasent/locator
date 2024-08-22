@@ -3,8 +3,8 @@ scripts for locating different files:
 
 1. locate_by_extension.ps1
    
-   **Useage:** ```
-# Use default output location (current directory)
+   **Useage:** 
+```# Use default output location (current directory)
 powershell -ExecutionPolicy Bypass -File list_files.ps1 -extension pdf
 
 # Specify only an output directory
