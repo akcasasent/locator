@@ -11,8 +11,8 @@ powershell -ExecutionPolicy Bypass -File list_files.ps1 -extension pdf
 powershell -ExecutionPolicy Bypass -File list_files.ps1 -extension docx -outputPath "C:\OutputFiles"
 
 # Specify a full output file path
-powershell -ExecutionPolicy Bypass -File list_files.ps1 -extension jpg -outputPath "D:\Reports\image_list.txt"```
-   
-3. locate_by_date.ps1
+powershell -ExecutionPolicy Bypass -File list_files.ps1 -extension jpg -outputPath "D:\Reports\image_list.txt" ```
+
+2. locate_by_date.ps1
 
    **Useage:** ```.\locate_by_date.ps1 -Path "C:\Users" -Extension ".txt" -DaysBack 30 -MinSize 1000 -OutputFolder "C:\Reports"```
