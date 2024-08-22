@@ -3,7 +3,15 @@ scripts for locating different files:
 
 1. locate_by_extension.ps1
    
-   **Useage:** ```powershell -ExecutionPolicy Bypass -File locate_by_extension.ps1 -extension pdf```
+   **Useage:** ```
+# Use default output location (current directory)
+powershell -ExecutionPolicy Bypass -File list_files.ps1 -extension pdf
+
+# Specify only an output directory
+powershell -ExecutionPolicy Bypass -File list_files.ps1 -extension docx -outputPath "C:\OutputFiles"
+
+# Specify a full output file path
+powershell -ExecutionPolicy Bypass -File list_files.ps1 -extension jpg -outputPath "D:\Reports\image_list.txt"```
    
 3. locate_by_date.ps1
 
