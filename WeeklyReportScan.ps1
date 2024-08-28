@@ -129,4 +129,41 @@ Please review the detailed reports and error logs for more information.
 
     # Optional: Email notification
     # Send-MailMessage -From "sender@example.com" -To "recipient@example.com" -Subject "Weekly File Report and Cleanup Summary - $machineName" -Body $summaryContent -Attachments $duplicateReportPath,$largeImageReportPath,$summaryReportPath,$duplicateErrorLogPath,$imageErrorLogPath -SmtpServer "smtp.example.com"
+
+    # Check for specific running tasks
+    $specificTasks = @("Task1", "Task2", "Task3") # Replace with actual task names
+    $runningTasks = Get-Process | Where-Object { $specificTasks -contains $_.ProcessName }
+
+    if ($runningTasks.Count -eq 0) {
+        # No specific tasks are running, proceed with restart
+        Restart-Computer -Force
+    } else {
+        # Specific tasks are running, prompt user for restart
+        $promptMessage = "The following tasks are still running:`n"
+        $runningTasks | ForEach-Object { $promptMessage += "- $($_.ProcessName)`n" }
+        $promptMessage += "`nDo you want to restart the computer? (Y/N)"
+
+        $decision = $null
+        $job = Start-Job -ScriptBlock {
+            Add-Type -AssemblyName System.Windows.Forms
+            $result = [System.Windows.Forms.MessageBox]::Show($args[0], "Restart Computer?", [System.Windows.Forms.MessageBoxButtons]::YesNo, [System.Windows.Forms.MessageBoxIcon]::Question)
+            return $result
+        } -ArgumentList $promptMessage
+
+        # Wait for 15 minutes or until the user responds
+        $null = Wait-Job $job -Timeout 900
+
+        if ($job.State -eq 'Completed') {
+            $decision = Receive-Job $job
+            Remove-Job $job
+
+            if ($decision -eq 'Yes') {
+                Restart-Computer -Force
+            }
+        } else {
+            # User didn't respond within 15 minutes
+            Stop-Job $job
+            Remove-Job $job
+        }
+    }
 }
