@@ -14,7 +14,7 @@ $toAddress = "recipient@example.com"
 $subjectPrefix = "Weekly Large Old Image Files Report -"
 
 # Define image file extensions to check
-$imageExtensions = @('.tiff', '.tif', '.jpg', '.jpeg', '.png', '.gif', '.bmp', '.raw', '.cr2', '.nef', '.arw', '.dng', '.psd', '.ai', '.eps')
+$imageExtensions = @('.tiff', '.tif', '.jpg', '.jpeg', '.png', '.gif', '.bmp', '.raw', '.cr2', '.nef', '.arw', '.dng', '.psd', '.ai', '.eps', '.mcd', '.qptiff', '.ims', '.sbd','.slx')
 
 # Function to get all drives
 function Get-AllDrives {
