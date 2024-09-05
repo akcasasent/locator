@@ -1,156 +1,125 @@
-# Set script parameters
-param (
-    [int]$DaysBack = 30,
-    [string]$OutputFolder = "$env:USERPROFILE\Desktop",
-    [long]$MinFileSize = 1GB,
-    [string]$CredentialFile = "$env:USERPROFILE\EmailCredential.xml"
-)
+# Configuration variables
+$currentDate = Get-Date
+$daysToKeep = 120
+$cutoffDate = $currentDate.AddDays(-$daysToKeep)
+$sizeCutoffGB = 1
+$sizeCutoffBytes = $sizeCutoffGB * 1GB
+$imageFileExtensions = @('.tiff','.tif','.jpg','.jpeg','.png','.gif','.bmp','.raw','.cr2','.nef','.arw','.dng','.psd','.ai','.eps','.mcd','.qptiff','.ims','.sbd','.slx')
 
-# Email settings
-$smtpServer = "your.smtp.server"
-$smtpPort = 587
-$fromAddress = "sender@example.com"
-$toAddress = "recipient@example.com"
-$subjectPrefix = "Weekly Large Old Image Files Report -"
+# Path configurations
+$baseLogPath = 'C:\Users\scopecore\Desktop\_scans\logs'
+$outputFileName = "LargeOldImageFilesReport_$($currentDate.ToString('yyyyMMdd')).csv"
+$logFileName = "LargeOldImageFilesScript_$($currentDate.ToString('yyyyMMdd')).log"
+$outputFile = Join-Path -Path $baseLogPath -ChildPath $outputFileName
+$logFile = Join-Path -Path $baseLogPath -ChildPath $logFileName
 
-# Define image file extensions to check
-$imageExtensions = @('.tiff', '.tif', '.jpg', '.jpeg', '.png', '.gif', '.bmp', '.raw', '.cr2', '.nef', '.arw', '.dng', '.psd', '.ai', '.eps', '.mcd', '.qptiff', '.ims', '.sbd','.slx')
+# System information
+$machineName = $env:COMPUTERNAME
 
-# Function to get all drives
+# Define functions
+# Gets all the Drives that on computer (not mounted but hardware)
 function Get-AllDrives {
-    Get-WmiObject Win32_LogicalDisk | Where-Object { $_.DriveType -eq 3 } | Select-Object -ExpandProperty DeviceID
+    Get-WmiObject Win32_LogicalDisk | 
+    Where-Object { $_.DriveType -eq 3 } | 
+    Select-Object -ExpandProperty DeviceID
 }
 
-# Function to get large, old image files
+# Sets up to write the log to the correct place
+function Write-Log {
+    param([string]$Message)
+    $logMessage = "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') - $Message"
+    Add-Content -Path $logFile -Value $logMessage
+    Write-Host $logMessage
+}
+
+# Gets the large image files 
 function Get-LargeOldImageFiles {
     param (
         [string]$Drive,
         [datetime]$CutoffDate,
         [long]$MinSize,
-        [array]$Extensions
+        [string[]]$Extensions
     )
-    
-    Get-ChildItem -Path $Drive -Recurse -File -ErrorAction SilentlyContinue | 
+
+    $files = Get-ChildItem -Path $Drive -Recurse -File -ErrorAction SilentlyContinue |
         Where-Object { 
-            $_.LastWriteTime -lt $CutoffDate -and 
             $_.Length -ge $MinSize -and 
+            $_.LastWriteTime -le $CutoffDate -and 
             $Extensions -contains $_.Extension.ToLower()
         } |
-        Select-Object FullName, LastWriteTime, Length, @{Name="Extension";Expression={$_.Extension.ToLower()}}
+        Select-Object FullName, Name, Extension, Length,
+            @{Name="SizeGB";Expression={[math]::Round($_.Length / 1GB, 2)}},
+            LastWriteTime, 
+            @{Name="AgeInDays";Expression={[math]::Round((New-TimeSpan -Start $_.LastWriteTime -End $currentDate).TotalDays, 0)}}
+
+    return $files
 }
-
-# Create the WeeklyCleanupAndReport script
-$weeklyScript = @"
-# Set variables
-`$currentDate = Get-Date
-`$cutoffDate = `$currentDate.AddDays(-$DaysBack)
-`$outputFile = Join-Path -Path '$OutputFolder' -ChildPath "LargeOldImageFilesReport_`$(`$currentDate.ToString('yyyyMMdd')).csv"
-
-# Get machine name and IP address
-`$machineName = `$env:COMPUTERNAME
-`$ipAddress = (Get-NetIPAddress | Where-Object {`$_.AddressFamily -eq 'IPv4' -and `$_.PrefixOrigin -eq 'Dhcp'}).IPAddress
 
 # Get all drives
-`$allDrives = Get-AllDrives
+$allDrives = Get-AllDrives
 
 # Initialize array to store large, old image files
-`$largeOldImageFiles = @()
+$largeOldImageFiles = @()
 
 # Process each drive
-foreach (`$drive in `$allDrives) {
-    Write-Host "Processing drive `$drive..."
-    `$largeOldImageFiles += Get-LargeOldImageFiles -Drive `$drive -CutoffDate `$cutoffDate -MinSize $MinFileSize -Extensions $imageExtensions
+foreach ($drive in $allDrives) {
+    Write-Log "Processing drive $drive..."
+    $largeOldImageFiles += Get-LargeOldImageFiles -Drive $drive -CutoffDate $cutoffDate -MinSize $sizeCutoffBytes -Extensions $imageFileExtensions | Where-Object { $_ -ne $null }
 }
+
+# Write a summary to the log file
+Write-Log "Processing complete. Total large old image files found: $($largeOldImageFiles.Count)"
 
 # Export large, old image files to CSV
-`$largeOldImageFiles | Export-Csv -Path `$outputFile -NoTypeInformation
+$largeOldImageFiles | Export-Csv -Path $outputFile -NoTypeInformation
 
 # Calculate total space and space taken by large, old image files
-`$totalSpace = 0
-`$totalFreeSpace = 0
-`$largeOldImageFilesSize = (`$largeOldImageFiles | Measure-Object -Property Length -Sum).Sum
+$totalSpace = 0
+$totalFreeSpace = 0
+$largeOldImageFilesSize = ($largeOldImageFiles | Measure-Object -Property Length -Sum).Sum
 
-foreach (`$drive in `$allDrives) {
-    `$driveInfo = Get-WmiObject Win32_LogicalDisk -Filter "DeviceID='`$drive'"
-    `$totalSpace += `$driveInfo.Size
-    `$totalFreeSpace += `$driveInfo.FreeSpace
+foreach ($drive in $allDrives) {
+    $driveInfo = Get-WmiObject Win32_LogicalDisk -Filter "DeviceID='$drive'"
+    $totalSpace += $driveInfo.Size
+    $totalFreeSpace += $driveInfo.FreeSpace
 }
 
-`$totalSpaceGB = [math]::Round(`$totalSpace / 1GB, 2)
-`$totalFreeSpaceGB = [math]::Round(`$totalFreeSpace / 1GB, 2)
-`$largeOldImageFilesSizeGB = [math]::Round(`$largeOldImageFilesSize / 1GB, 2)
+$totalSpaceGB = [math]::Round($totalSpace / 1GB, 2)
+$totalFreeSpaceGB = [math]::Round($totalFreeSpace / 1GB, 2)
+$largeOldImageFilesSizeGB = [math]::Round($largeOldImageFilesSize / 1GB, 2)
 
 # Get file extension statistics
-`$extensionStats = `$largeOldImageFiles | Group-Object -Property Extension | 
-    Select-Object @{Name="Extension";Expression={`$_.Name}}, Count, 
-    @{Name="TotalSizeGB";Expression={[math]::Round((`$_.Group | Measure-Object -Property Length -Sum).Sum / 1GB, 2)}} |
+$extensionStats = $largeOldImageFiles | Group-Object -Property Extension | 
+    Select-Object @{Name="Extension";Expression={$_.Name}}, Count, 
+    @{Name="TotalSizeGB";Expression={[math]::Round(($_.Group | Measure-Object -Property Length -Sum).Sum / 1GB, 2)}} |
     Sort-Object TotalSizeGB -Descending
 
-# Prepare email body
-`$emailBody = @"
+# Prepare report content
+$reportContent = @"
 Weekly Large Old Image Files Report
 
 Machine Information:
-Machine Name: `$machineName
-IP Address: `$ipAddress
+Machine Name: $machineName
 
-Large Old Image Files Report saved to: `$outputFile
+Large Old Image Files Report saved to: $outputFile
 
 Space Summary:
-Total Space on All Drives: `$totalSpaceGB GB
-Free Space on All Drives: `$totalFreeSpaceGB GB
-Space Taken by Large Image Files (>= 1GB) Older Than $DaysBack Days: `$largeOldImageFilesSizeGB GB
-Total Large Old Image Files Found: `$(`$largeOldImageFiles.Count)
+Total Space on All Drives: $totalSpaceGB GB
+Free Space on All Drives: $totalFreeSpaceGB GB
+Space Taken by Large Image Files (>= ${sizeCutoffGB}GB) Older Than $daysToKeep Days: $largeOldImageFilesSizeGB GB
+Total Large Old Image Files Found: $($largeOldImageFiles.Count)
 
-Date Range: Older than `$(`$cutoffDate.ToString('yyyy-MM-dd'))
-Minimum File Size: 1GB
+Date Range: Older than $($cutoffDate.ToString('yyyy-MM-dd'))
+Minimum File Size: ${sizeCutoffGB}GB
 
 File Extension Statistics:
-$(`$extensionStats | ForEach-Object { "`$(`$_.Extension): `$(`$_.Count) files, `$(`$_.TotalSizeGB) GB" } | Out-String)
+$($extensionStats | ForEach-Object { "$($_.Extension): $($_.Count) files, $($_.TotalSizeGB) GB" } | Out-String)
 
-Image File Extensions Checked: $($imageExtensions -join ', ')
+Image File Extensions Checked: $($imageFileExtensions -join ', ')
 "@
 
-# Load the credential
-`$credential = Import-Clixml -Path '$CredentialFile'
+# Write report content to log file
+Write-Log "$reportContent"
 
-# Send email
-`$smtpClient = New-Object Net.Mail.SmtpClient(`$smtpServer, `$smtpPort)
-`$smtpClient.EnableSsl = `$true
-`$smtpClient.Credentials = `$credential
-
-`$mailMessage = New-Object System.Net.Mail.MailMessage(`$fromAddress, `$toAddress, `$subjectPrefix + " `$machineName", `$emailBody)
-`$mailMessage.Attachments.Add(`$outputFile)
-`$smtpClient.Send(`$mailMessage)
-
-Write-Host "Report generated and email sent."
-"@
-
-# Save the WeeklyCleanupAndReport script
-$weeklyScriptPath = "$env:TEMP\WeeklyLargeOldImageFilesReport.ps1"
-$weeklyScript | Out-File -FilePath $weeklyScriptPath -Encoding UTF8
-
-# Create a new scheduled task action
-$action = New-ScheduledTaskAction -Execute "PowerShell.exe" -Argument "-ExecutionPolicy Bypass -File `"$weeklyScriptPath`""
-
-# Create a trigger for every Friday at 9:00 AM
-$trigger = New-ScheduledTaskTrigger -Weekly -DaysOfWeek Friday -At 9am
-
-# Set the task settings
-$settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -DontStopOnIdleEnd
-
-# Create the scheduled task
-$taskName = "Weekly Large Old Image Files Report"
-$description = "Checks for large old image files (>= 1GB) across all drives, generates a report, and emails it every Friday at 9:00 AM"
-
-# Register the scheduled task
-Register-ScheduledTask -Action $action -Trigger $trigger -TaskName $taskName -Description $description -Settings $settings -User "SYSTEM"
-
-Write-Host "Scheduled task created successfully."
-
-# Create the credential file if it doesn't exist
-if (-not (Test-Path $CredentialFile)) {
-    $emailCredential = Get-Credential -Message "Enter the email account credentials"
-    $emailCredential | Export-Clixml -Path $CredentialFile
-    Write-Host "Credential file created at $CredentialFile"
-}
+# Display report content in console
+Write-Host "$reportContent"
